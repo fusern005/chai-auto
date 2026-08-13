@@ -1,4 +1,7 @@
-FROM php:8.2-apache
+FROM php:8.3-apache
+
+# Allow Composer superuser
+ENV COMPOSER_ALLOW_SUPERUSER 1
 
 # Install system dependencies & PHP extensions
 RUN apt-get update && apt-get install -y \
@@ -29,7 +32,7 @@ COPY . /var/www/html
 
 # Install Composer dependencies
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
-RUN composer install --no-dev --optimize-autoloader --no-interaction
+RUN composer install --no-dev --optimize-autoloader --no-interaction --ignore-platform-reqs
 
 # Create storage database for SQLite or Session if needed
 RUN mkdir -p storage/framework/views storage/framework/sessions storage/framework/cache storage/logs bootstrap/cache
