@@ -1,48 +1,49 @@
-FROM php:8.3-cli
+FROM php:8.2-apache
 
+# Install system dependencies & PHP extensions
 RUN apt-get update && apt-get install -y \
-    git \
-    unzip \
-    libzip-dev \
     libpng-dev \
-    libonig-dev \
-    libxml2-dev \
-    libsqlite3-dev \
-    && docker-php-ext-install \
-    pdo \
-    pdo_mysql \
-    pdo_sqlite \
-    mbstring \
-    bcmath \
+    libjpeg-dev \
+    libfreetype6-dev \
     zip \
-    && rm -rf /var/lib/apt/lists/*
+    unzip \
+    git \
+    curl \
+    libzip-dev \
+    && docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-install gd pdo pdo_mysql zip bcmath
 
-COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+# Enable Apache mod_rewrite
+RUN a2enmod rewrite
 
+# Change Apache DocumentRoot to /var/www/html/public
+ENV APACHE_DOCUMENT_ROOT /var/www/html/public
+RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-available/*.conf
+RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/conf-available/*.conf
+
+# Set working directory
 WORKDIR /var/www/html
 
-COPY . .
+# Copy application files
+COPY . /var/www/html
 
-# สร้าง SQLite database
-RUN touch database/database.sqlite
+# Install Composer dependencies
+COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+RUN composer install --no-dev --optimize-autoloader --no-interaction
 
-RUN composer install \
-    --no-dev \
-    --optimize-autoloader \
-    --no-interaction \
-    --prefer-dist
+# Create storage database for SQLite or Session if needed
+RUN mkdir -p storage/framework/views storage/framework/sessions storage/framework/cache storage/logs bootstrap/cache
+RUN touch database/database.sqlite || true
 
-RUN mkdir -p \
-    storage/framework/cache \
-    storage/framework/sessions \
-    storage/framework/views \
-    storage/logs \
-    bootstrap/cache
+# Set directory permissions
+RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache /var/www/html/database
 
-RUN chmod -R 775 storage bootstrap/cache
+# Expose HTTP port
+EXPOSE 80
 
-RUN php artisan optimize:clear || true
-
-EXPOSE 10000
-
-CMD ["sh", "-c", "php artisan serve --host=0.0.0.0 --port=${PORT:-10000}"]
+# Start script
+CMD php artisan config:clear && \
+    php artisan route:clear && \
+    php artisan view:clear && \
+    php artisan migrate --force || true && \
+    apache2-foreground
